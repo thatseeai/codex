@@ -1,354 +1,354 @@
-# Codex CLI Project Overview
+# Codex CLI 프로젝트 개요
 
-## What is Codex CLI?
+## Codex CLI란?
 
-**Codex CLI** is OpenAI's official coding agent that runs locally on your computer. It's a powerful AI-powered development assistant distributed via npm (`@openai/codex`) and Homebrew, designed for ChatGPT Plus, Pro, Team, Edu, and Enterprise users.
+**Codex CLI**는 OpenAI의 공식 코딩 에이전트로, 사용자의 컴퓨터에서 로컬로 실행됩니다. npm(`@openai/codex`) 및 Homebrew를 통해 배포되는 강력한 AI 기반 개발 도우미로, ChatGPT Plus, Pro, Team, Edu, Enterprise 사용자를 위해 설계되었습니다.
 
-### Key Capabilities
+### 주요 기능
 
-- Execute code and commands in a sandboxed environment
-- Make file changes and modifications to codebases
-- Interact with Git repositories
-- Connect to Model Context Protocol (MCP) servers
-- Provide interactive TUI (Terminal User Interface) mode
-- Support non-interactive exec mode for automation
-- Embeddable via TypeScript SDK for programmatic use
+- 샌드박스 환경에서 코드 및 명령어 실행
+- 코드베이스의 파일 변경 및 수정
+- Git 저장소와 상호작용
+- Model Context Protocol (MCP) 서버 연결
+- 대화형 TUI (Terminal User Interface) 모드 제공
+- 자동화를 위한 비대화형 exec 모드 지원
+- TypeScript SDK를 통한 프로그래밍 방식 임베딩 가능
 
-## Repository Structure
+## 저장소 구조
 
-This is a **monorepo** with a hybrid Rust/TypeScript architecture:
+**모노레포** 구조로, Rust/TypeScript 하이브리드 아키텍처를 사용합니다:
 
 ```
 /home/user/codex/
-├── codex-rs/           # Rust workspace (main implementation)
-│   ├── cli/            # Main CLI binary entry point
-│   ├── core/           # Business logic and core functionality
-│   ├── tui/            # Terminal UI (Ratatui-based)
-│   ├── exec/           # Non-interactive/headless execution mode
-│   ├── protocol/       # Communication protocol definitions
-│   ├── common/         # Shared utilities
-│   ├── app-server/     # Local server for IDE integration
-│   ├── backend-client/ # Backend API client
-│   ├── mcp-server/     # MCP server implementation
-│   ├── mcp-types/      # MCP type definitions
-│   ├── login/          # Authentication logic
-│   ├── sandbox/        # Platform-specific sandboxing
+├── codex-rs/           # Rust 워크스페이스 (메인 구현)
+│   ├── cli/            # 메인 CLI 바이너리 진입점
+│   ├── core/           # 비즈니스 로직 및 핵심 기능
+│   ├── tui/            # 터미널 UI (Ratatui 기반)
+│   ├── exec/           # 비대화형/헤드리스 실행 모드
+│   ├── protocol/       # 통신 프로토콜 정의
+│   ├── common/         # 공유 유틸리티
+│   ├── app-server/     # IDE 통합을 위한 로컬 서버
+│   ├── backend-client/ # 백엔드 API 클라이언트
+│   ├── mcp-server/     # MCP 서버 구현
+│   ├── mcp-types/      # MCP 타입 정의
+│   ├── login/          # 인증 로직
+│   ├── sandbox/        # 플랫폼별 샌드박싱
 │   │   ├── linux-sandbox/
 │   │   └── windows-sandbox-rs/
-│   └── utils/          # Various utility crates
-├── codex-cli/          # NPM wrapper package
-├── sdk/typescript/     # TypeScript SDK for programmatic use
-├── docs/               # User documentation
-├── scripts/            # Build and release scripts
-└── .github/            # CI/CD workflows
+│   └── utils/          # 다양한 유틸리티 크레이트
+├── codex-cli/          # NPM 래퍼 패키지
+├── sdk/typescript/     # 프로그래밍 방식 사용을 위한 TypeScript SDK
+├── docs/               # 사용자 문서
+├── scripts/            # 빌드 및 릴리스 스크립트
+└── .github/            # CI/CD 워크플로우
 ```
 
-### Rust Workspace Structure
+### Rust 워크스페이스 구조
 
-The `codex-rs/` directory contains 41 workspace member crates:
+`codex-rs/` 디렉토리는 41개의 워크스페이스 멤버 크레이트를 포함합니다:
 
-**Core Components:**
-- `cli` - Main CLI binary entry point (`codex-rs/cli/src/main.rs`)
-- `core` - Business logic, tool execution, MCP client, config management
-- `tui` - Full-screen interactive terminal interface (Ratatui-based)
-- `exec` - Headless mode for automation
-- `protocol` - Communication protocol definitions
+**핵심 컴포넌트:**
+- `cli` - 메인 CLI 바이너리 진입점 (`codex-rs/cli/src/main.rs`)
+- `core` - 비즈니스 로직, 도구 실행, MCP 클라이언트, 설정 관리
+- `tui` - 전체 화면 대화형 터미널 인터페이스 (Ratatui 기반)
+- `exec` - 자동화를 위한 헤드리스 모드
+- `protocol` - 프로토콜 정의
 
-**Security & Sandboxing:**
-- `linux-sandbox` - Linux sandboxing (Landlock, seccomp)
-- `windows-sandbox-rs` - Windows sandboxing (restricted tokens)
-- macOS sandboxing uses Seatbelt (Core Foundation)
-- `process-hardening` - Process hardening utilities
+**보안 및 샌드박싱:**
+- `linux-sandbox` - Linux 샌드박싱 (Landlock, seccomp)
+- `windows-sandbox-rs` - Windows 샌드박싱 (제한된 토큰)
+- macOS 샌드박싱은 Seatbelt 사용 (Core Foundation)
+- `process-hardening` - 프로세스 강화 유틸리티
 
-**Integration:**
-- `mcp-server` - MCP server implementation
-- `mcp-types` - MCP type definitions
-- `rmcp-client` - MCP client
-- `app-server` - Local WebSocket server for IDE integration
-- `backend-client` - Backend API client
+**통합:**
+- `mcp-server` - MCP 서버 구현
+- `mcp-types` - MCP 타입 정의
+- `rmcp-client` - MCP 클라이언트
+- `app-server` - IDE 통합을 위한 로컬 WebSocket 서버
+- `backend-client` - 백엔드 API 클라이언트
 
-**Utilities:**
-- `utils/git` - Git operations
-- `utils/cache` - Caching utilities
-- `utils/image` - Image processing
-- `utils/pty` - PTY utilities
-- `utils/tokenizer` - Tokenization
-- `file-search` - File searching
-- `apply-patch` - Patch application
+**유틸리티:**
+- `utils/git` - Git 작업
+- `utils/cache` - 캐싱 유틸리티
+- `utils/image` - 이미지 처리
+- `utils/pty` - PTY 유틸리티
+- `utils/tokenizer` - 토큰화
+- `file-search` - 파일 검색
+- `apply-patch` - 패치 적용
 
-All crate names are prefixed with `codex-` (e.g., the `core` folder's crate is `codex-core`).
+모든 크레이트 이름은 `codex-` 접두사를 사용합니다 (예: `core` 폴더의 크레이트는 `codex-core`).
 
-## Technology Stack
+## 기술 스택
 
-### Rust Stack
+### Rust 스택
 
-**Language & Edition:**
+**언어 및 에디션:**
 - Rust 1.90.0 (2024 edition)
-- See `codex-rs/rust-toolchain.toml`
+- `codex-rs/rust-toolchain.toml` 참조
 
-**Core Dependencies:**
-- **TUI Framework**: Ratatui 0.29.0 (terminal UI rendering)
-- **Terminal**: Crossterm 0.28.1 (cross-platform terminal manipulation)
-- **Async Runtime**: Tokio (multi-threaded async runtime)
-- **HTTP Client**: Reqwest 0.12 (async HTTP)
-- **Serialization**: Serde, serde_json
-- **Configuration**: TOML (toml 0.9.5, toml_edit 0.23.4)
+**핵심 의존성:**
+- **TUI 프레임워크**: Ratatui 0.29.0 (터미널 UI 렌더링)
+- **터미널**: Crossterm 0.28.1 (크로스 플랫폼 터미널 조작)
+- **비동기 런타임**: Tokio (멀티스레드 비동기 런타임)
+- **HTTP 클라이언트**: Reqwest 0.12 (비동기 HTTP)
+- **직렬화**: Serde, serde_json
+- **설정**: TOML (toml 0.9.5, toml_edit 0.23.4)
 - **MCP**: rmcp 0.8.5 (Model Context Protocol)
-- **Observability**: OpenTelemetry 0.30.0, tracing
-- **Sandboxing**:
+- **관찰성**: OpenTelemetry 0.30.0, tracing
+- **샌드박싱**:
   - Linux: Landlock 0.4.1, seccompiler 0.5.0
   - macOS: Core Foundation (Seatbelt)
-  - Windows: Custom restricted-token implementation
+  - Windows: 사용자 정의 제한 토큰 구현
 
-**Testing:**
-- cargo-nextest (faster test runner)
-- insta 1.43.2 (snapshot testing, especially for TUI)
-- wiremock 0.6 (HTTP mocking)
-- pretty_assertions 1.4.1 (better assertion diffs)
+**테스트:**
+- cargo-nextest (빠른 테스트 러너)
+- insta 1.43.2 (스냅샷 테스트, 특히 TUI용)
+- wiremock 0.6 (HTTP 모킹)
+- pretty_assertions 1.4.1 (더 나은 assertion diff)
 
-### TypeScript/Node.js Stack
+### TypeScript/Node.js 스택
 
-**Package Manager & Runtime:**
-- **pnpm**: 10.8.1 (workspace package manager)
+**패키지 매니저 및 런타임:**
+- **pnpm**: 10.8.1 (워크스페이스 패키지 매니저)
 - **Node.js**: >=22
-- **Build Tool**: tsup 8.5.0 (TypeScript bundler)
-- **Testing**: Jest 29.7.0
-- **Linting**: ESLint 9.36.0
-- **Formatting**: Prettier 3.5.3
+- **빌드 도구**: tsup 8.5.0 (TypeScript 번들러)
+- **테스트**: Jest 29.7.0
+- **린팅**: ESLint 9.36.0
+- **포매팅**: Prettier 3.5.3
 - **MCP SDK**: @modelcontextprotocol/sdk 1.20.2
 
-### Build Tools
+### 빌드 도구
 
-- **Just**: Task runner (see `codex-rs/justfile`)
-- **cargo-nextest**: Fast parallel test execution
-- **cargo-insta**: Snapshot testing tool
-- **cargo-shear**: Unused dependency detection
-- **sccache**: Build caching for CI
-- **GitHub Actions**: CI/CD automation
+- **Just**: 태스크 러너 (`codex-rs/justfile` 참조)
+- **cargo-nextest**: 빠른 병렬 테스트 실행
+- **cargo-insta**: 스냅샷 테스트 도구
+- **cargo-shear**: 사용하지 않는 의존성 감지
+- **sccache**: CI를 위한 빌드 캐싱
+- **GitHub Actions**: CI/CD 자동화
 
-## Development Workflow
+## 개발 워크플로우
 
-### Building
+### 빌드
 
 **Rust:**
 ```bash
 cd codex-rs
-just codex          # Run the CLI
-just fmt            # Format code (auto-run after changes)
-just fix -p <crate> # Fix linter issues for specific crate
-just test           # Run tests with nextest
+just codex          # CLI 실행
+just fmt            # 코드 포매팅 (변경 후 자동 실행)
+just fix -p <crate> # 특정 크레이트에 대한 린터 문제 수정
+just test           # nextest로 테스트 실행
 ```
 
 **TypeScript:**
 ```bash
-pnpm install        # Install dependencies
-pnpm format         # Check formatting
-pnpm format:fix     # Fix formatting
+pnpm install        # 의존성 설치
+pnpm format         # 포매팅 확인
+pnpm format:fix     # 포매팅 수정
 ```
 
-### Testing
+### 테스트
 
-**Rust Testing:**
-1. Run tests for specific project: `cargo test -p codex-<crate>`
-2. For changes in common/core/protocol: `cargo test --all-features`
-3. Use `cargo nextest run` for faster execution
-4. Snapshot tests: `cargo insta accept -p codex-tui` (after reviewing changes)
+**Rust 테스트:**
+1. 특정 프로젝트 테스트 실행: `cargo test -p codex-<crate>`
+2. common/core/protocol 변경 시: `cargo test --all-features`
+3. 빠른 실행을 위해 `cargo nextest run` 사용
+4. 스냅샷 테스트: `cargo insta accept -p codex-tui` (변경 사항 검토 후)
 
-**Test Utilities:**
-- Integration tests use `core_test_support::responses`
-- TUI tests use snapshot testing (insta)
-- Mock SSE responses with `mount_sse*` helpers
-- Use `pretty_assertions::assert_eq` for better diffs
+**테스트 유틸리티:**
+- 통합 테스트는 `core_test_support::responses` 사용
+- TUI 테스트는 스냅샷 테스트(insta) 사용
+- `mount_sse*` 헬퍼로 SSE 응답 모킹
+- 더 나은 diff를 위해 `pretty_assertions::assert_eq` 사용
 
-**Important Test Notes:**
-- Tests check for `CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR` to skip network tests
-- Seatbelt tests check `CODEX_SANDBOX=seatbelt` to avoid nested sandboxing
-- Never modify these environment variable checks
+**중요 테스트 참고사항:**
+- 테스트는 네트워크 테스트를 건너뛰기 위해 `CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR` 확인
+- Seatbelt 테스트는 중첩 샌드박싱을 피하기 위해 `CODEX_SANDBOX=seatbelt` 확인
+- 이러한 환경 변수 검사를 절대 수정하지 말 것
 
-### Code Style
+### 코드 스타일
 
-**Rust Conventions:**
-- Collapse if statements (clippy rule)
-- Inline format! args when possible
-- Use method references over closures
-- Never use unsigned integers even for non-negative numbers
-- Prefer comparing entire objects over field-by-field comparisons
-- All lints configured in `codex-rs/Cargo.toml` under `[workspace.lints.clippy]`
+**Rust 관례:**
+- if 문 축약 (clippy 규칙)
+- 가능한 경우 format! 인자 인라인화
+- 클로저보다 메서드 참조 사용
+- 음수가 아니어도 부호 없는 정수는 절대 사용하지 않음
+- 필드별 비교보다 전체 객체 비교 선호
+- 모든 린트는 `codex-rs/Cargo.toml`의 `[workspace.lints.clippy]`에 설정
 
-**TUI Styling (Ratatui):**
-- Use Stylize trait helpers: `.dim()`, `.bold()`, `.cyan()`, `.italic()`
-- Prefer `"text".into()` for simple spans
-- Avoid hardcoded `.white()` - use default foreground
-- Use `textwrap::wrap` for text wrapping
-- See `codex-rs/tui/styles.md` for full conventions
+**TUI 스타일링 (Ratatui):**
+- Stylize 트레잇 헬퍼 사용: `.dim()`, `.bold()`, `.cyan()`, `.italic()`
+- 단순 span의 경우 `"text".into()` 선호
+- 하드코딩된 `.white()` 피하기 - 기본 전경색 사용
+- 텍스트 줄바꿈에 `textwrap::wrap` 사용
+- 전체 규칙은 `codex-rs/tui/styles.md` 참조
 
-## Configuration
+## 설정
 
-**User Configuration:**
-- Location: `~/.codex/config.toml`
-- Rich TOML-based configuration system
-- See `docs/config.md` for full options
-- Example: `docs/example-config.md`
+**사용자 설정:**
+- 위치: `~/.codex/config.toml`
+- 풍부한 TOML 기반 설정 시스템
+- 전체 옵션은 `docs/config.md` 참조
+- 예제: `docs/example-config.md`
 
-**Build Configuration:**
-- `codex-rs/Cargo.toml` - Workspace dependencies and settings
-- `codex-rs/clippy.toml` - Clippy linting rules
-- `codex-rs/rustfmt.toml` - Formatting rules
-- `codex-rs/justfile` - Common build commands
+**빌드 설정:**
+- `codex-rs/Cargo.toml` - 워크스페이스 의존성 및 설정
+- `codex-rs/clippy.toml` - Clippy 린팅 규칙
+- `codex-rs/rustfmt.toml` - 포매팅 규칙
+- `codex-rs/justfile` - 일반 빌드 명령어
 
-**CI/CD Configuration:**
-- `.github/workflows/rust-ci.yml` - Rust CI pipeline
-- `.github/workflows/rust-release.yml` - Release automation
+**CI/CD 설정:**
+- `.github/workflows/rust-ci.yml` - Rust CI 파이프라인
+- `.github/workflows/rust-release.yml` - 릴리스 자동화
 - `.github/workflows/sdk.yml` - TypeScript SDK CI
 
-## Distribution & Release
+## 배포 및 릴리스
 
-### Build Profiles
+### 빌드 프로파일
 
-**Release Profile** (`[profile.release]`):
-- LTO: "fat" (link-time optimization)
-- Strip: "symbols" (remove debug symbols)
-- codegen-units: 1 (single codegen unit for optimization)
+**릴리스 프로파일** (`[profile.release]`):
+- LTO: "fat" (링크 타임 최적화)
+- Strip: "symbols" (디버그 심볼 제거)
+- codegen-units: 1 (최적화를 위한 단일 코드젠 유닛)
 
-**CI Test Profile** (`[profile.ci-test]`):
-- debug: 1 (reduced debug symbols)
-- opt-level: 0 (faster compilation)
+**CI 테스트 프로파일** (`[profile.ci-test]`):
+- debug: 1 (축소된 디버그 심볼)
+- opt-level: 0 (빠른 컴파일)
 
-### Supported Platforms
+### 지원 플랫폼
 
-Codex builds for 8 target platforms:
+Codex는 8개 타겟 플랫폼용으로 빌드됩니다:
 - **macOS**: aarch64-apple-darwin, x86_64-apple-darwin
 - **Linux**: x86_64-unknown-linux-musl, x86_64-unknown-linux-gnu, aarch64-unknown-linux-musl, aarch64-unknown-linux-gnu
 - **Windows**: x86_64-pc-windows-msvc, aarch64-pc-windows-msvc
 
-### Distribution Channels
+### 배포 채널
 
-1. **npm**: `@openai/codex` (wraps native binaries)
-   - Install: `npm install -g @openai/codex`
-   - NPM wrapper in `codex-cli/`
+1. **npm**: `@openai/codex` (네이티브 바이너리 래핑)
+   - 설치: `npm install -g @openai/codex`
+   - NPM 래퍼는 `codex-cli/`에 위치
 
 2. **Homebrew**: `codex` (cask)
-   - Install: `brew install --cask codex`
+   - 설치: `brew install --cask codex`
 
-3. **GitHub Releases**: Direct binary downloads
-   - Tagged with `rust-v*.*.*` format
+3. **GitHub Releases**: 직접 바이너리 다운로드
+   - `rust-v*.*.*` 형식으로 태그
 
-### Release Process
+### 릴리스 프로세스
 
-1. Tag with `rust-v*.*.*` (e.g., `rust-v0.1.0`)
-2. CI validates tag matches `Cargo.toml` version
-3. Cross-compilation builds for all 8 platforms
-4. Binaries uploaded to GitHub Releases
-5. NPM package staged and published
+1. `rust-v*.*.*`로 태그 (예: `rust-v0.1.0`)
+2. CI가 태그와 `Cargo.toml` 버전 일치 확인
+3. 8개 플랫폼 모두에 대한 크로스 컴파일 빌드
+4. GitHub Releases에 바이너리 업로드
+5. NPM 패키지 스테이징 및 게시
 
-## Key Features
+## 주요 기능
 
-### Sandboxing Modes
+### 샌드박싱 모드
 
-- **read-only**: Read-only access to workspace
-- **workspace-write**: Write access to workspace only
-- **full-access**: Full system access
+- **read-only**: 워크스페이스에 대한 읽기 전용 액세스
+- **workspace-write**: 워크스페이스에만 쓰기 액세스
+- **full-access**: 전체 시스템 액세스
 
-Platform-specific implementations:
+플랫폼별 구현:
 - Linux: Landlock LSM + seccomp BPF
-- macOS: Seatbelt sandbox profiles
-- Windows: Restricted tokens
+- macOS: Seatbelt 샌드박스 프로파일
+- Windows: 제한된 토큰
 
-### Authentication Methods
+### 인증 방법
 
-- ChatGPT SSO (recommended)
-- OpenAI API key
-- Device code flow
-- See `docs/authentication.md`
+- ChatGPT SSO (권장)
+- OpenAI API 키
+- 디바이스 코드 플로우
+- `docs/authentication.md` 참조
 
-### MCP Integration
+### MCP 통합
 
-- Acts as MCP client (connects to MCP servers)
-- Acts as MCP server (can be used by other MCP clients)
-- Configuration in `~/.codex/config.toml`
-- See `docs/advanced.md#model-context-protocol-mcp`
+- MCP 클라이언트로 동작 (MCP 서버에 연결)
+- MCP 서버로 동작 (다른 MCP 클라이언트가 사용 가능)
+- `~/.codex/config.toml`에서 설정
+- `docs/advanced.md#model-context-protocol-mcp` 참조
 
-### Modes of Operation
+### 작동 모드
 
-1. **Interactive TUI**: Full-screen terminal interface
-   - Run: `codex`
-   - See: `codex-rs/tui/`
+1. **대화형 TUI**: 전체 화면 터미널 인터페이스
+   - 실행: `codex`
+   - 위치: `codex-rs/tui/`
 
-2. **Exec Mode**: Non-interactive automation
-   - Run: `codex exec "<prompt>"`
-   - See: `docs/exec.md`, `codex-rs/exec/`
+2. **Exec 모드**: 비대화형 자동화
+   - 실행: `codex exec "<prompt>"`
+   - 참조: `docs/exec.md`, `codex-rs/exec/`
 
-3. **TypeScript SDK**: Programmatic API
-   - Package: `@openai/codex-sdk`
-   - See: `sdk/typescript/`
+3. **TypeScript SDK**: 프로그래밍 방식 API
+   - 패키지: `@openai/codex-sdk`
+   - 위치: `sdk/typescript/`
 
-4. **App Server**: Local WebSocket server for IDE integration
-   - See: `codex-rs/app-server/`
+4. **App Server**: IDE 통합을 위한 로컬 WebSocket 서버
+   - 위치: `codex-rs/app-server/`
 
-## Important Files & Entry Points
+## 중요 파일 및 진입점
 
-### Rust Entry Points
+### Rust 진입점
 
-- `codex-rs/cli/src/main.rs` - Main CLI binary entry point
-- `codex-rs/tui/src/main.rs` - TUI entry point
-- `codex-rs/exec/src/lib.rs` - Exec mode library
+- `codex-rs/cli/src/main.rs` - 메인 CLI 바이너리 진입점
+- `codex-rs/tui/src/main.rs` - TUI 진입점
+- `codex-rs/exec/src/lib.rs` - Exec 모드 라이브러리
 
-### TypeScript Entry Points
+### TypeScript 진입점
 
-- `sdk/typescript/src/index.ts` - SDK public API
-- `codex-cli/bin/codex.js` - NPM wrapper script
+- `sdk/typescript/src/index.ts` - SDK 공개 API
+- `codex-cli/bin/codex.js` - NPM 래퍼 스크립트
 
-### Documentation
+### 문서
 
-- `README.md` - Main project README
-- `AGENTS.md` - Development guidelines and conventions
-- `docs/getting-started.md` - Getting started guide
-- `docs/config.md` - Configuration reference
-- `docs/sandbox.md` - Sandbox & approvals
-- `docs/authentication.md` - Authentication methods
-- `docs/exec.md` - Non-interactive mode
-- `docs/contributing.md` - Contributing guidelines
-- `docs/install.md` - Installation & build instructions
-- `docs/faq.md` - Frequently asked questions
+- `README.md` - 메인 프로젝트 README
+- `AGENTS.md` - 개발 가이드라인 및 관례
+- `docs/getting-started.md` - 시작 가이드
+- `docs/config.md` - 설정 레퍼런스
+- `docs/sandbox.md` - 샌드박스 및 승인
+- `docs/authentication.md` - 인증 방법
+- `docs/exec.md` - 비대화형 모드
+- `docs/contributing.md` - 기여 가이드라인
+- `docs/install.md` - 설치 및 빌드 지침
+- `docs/faq.md` - 자주 묻는 질문
 
-### Build Scripts
+### 빌드 스크립트
 
-- `scripts/stage_npm_packages.py` - NPM package staging
-- `codex-cli/scripts/build_npm_package.py` - Build NPM distribution
+- `scripts/stage_npm_packages.py` - NPM 패키지 스테이징
+- `codex-cli/scripts/build_npm_package.py` - NPM 배포 빌드
 
-## Development Guidelines Summary
+## 개발 가이드라인 요약
 
-See `AGENTS.md` for full guidelines. Key points:
+전체 가이드라인은 `AGENTS.md` 참조. 핵심 사항:
 
-- All crate names prefixed with `codex-`
-- Run `just fmt` after code changes (no approval needed)
-- Run `just fix -p <project>` before finalizing changes
-- Use `cargo test -p codex-<crate>` for project-specific tests
-- Use `cargo insta accept -p codex-<crate>` for snapshot updates
-- Never modify sandbox environment variable checks
-- Follow Rust 2024 edition conventions
-- Use Ratatui Stylize helpers for TUI styling
-- Use `textwrap` for text wrapping in TUI
+- 모든 크레이트 이름에 `codex-` 접두사 사용
+- 코드 변경 후 `just fmt` 실행 (승인 불필요)
+- 변경 완료 전 `just fix -p <project>` 실행
+- 프로젝트별 테스트에 `cargo test -p codex-<crate>` 사용
+- 스냅샷 업데이트에 `cargo insta accept -p codex-<crate>` 사용
+- 샌드박스 환경 변수 검사를 절대 수정하지 말 것
+- Rust 2024 edition 관례 준수
+- TUI 스타일링에 Ratatui Stylize 헬퍼 사용
+- TUI의 텍스트 줄바꿈에 `textwrap` 사용
 
-## External Resources
+## 외부 리소스
 
-- **Main Website**: https://chatgpt.com/codex
-- **IDE Integration**: https://developers.openai.com/codex/ide
-- **GitHub Repository**: https://github.com/openai/codex
-- **npm Package**: https://www.npmjs.com/package/@openai/codex
-- **Documentation**: See `docs/` folder
-- **Issues**: https://github.com/openai/codex/issues
+- **메인 웹사이트**: https://chatgpt.com/codex
+- **IDE 통합**: https://developers.openai.com/codex/ide
+- **GitHub 저장소**: https://github.com/openai/codex
+- **npm 패키지**: https://www.npmjs.com/package/@openai/codex
+- **문서**: `docs/` 폴더 참조
+- **이슈**: https://github.com/openai/codex/issues
 
-## Architecture Notes
+## 아키텍처 참고사항
 
-This is a production-grade, enterprise-ready tool with:
-- Sophisticated security sandboxing per platform
-- Comprehensive test coverage (unit, integration, snapshot)
-- Multi-platform support (macOS, Linux, Windows, ARM)
-- Modern async Rust architecture (Tokio)
-- Rich TUI with Ratatui
-- Extensible MCP integration
-- TypeScript SDK for embedding
-- Professional release automation
+이것은 다음을 갖춘 프로덕션급 엔터프라이즈 도구입니다:
+- 플랫폼별 정교한 보안 샌드박싱
+- 포괄적인 테스트 커버리지 (단위, 통합, 스냅샷)
+- 멀티 플랫폼 지원 (macOS, Linux, Windows, ARM)
+- 모던 비동기 Rust 아키텍처 (Tokio)
+- Ratatui를 사용한 풍부한 TUI
+- 확장 가능한 MCP 통합
+- 임베딩을 위한 TypeScript SDK
+- 전문적인 릴리스 자동화
 
-The codebase follows best practices for Rust development with strict clippy rules, snapshot testing for UI, and comprehensive CI/CD workflows.
+코드베이스는 엄격한 clippy 규칙, UI용 스냅샷 테스트, 포괄적인 CI/CD 워크플로우를 통해 Rust 개발 모범 사례를 따릅니다.
