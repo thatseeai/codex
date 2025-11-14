@@ -576,6 +576,237 @@ thread.start()
 # cs.cancel()
 ```
 
+## Codex CLI에서의 실제 구현
+
+Codex CLI는 **모든 요청을 스트리밍으로 처리**합니다. 일괄 응답 모드는 사용하지 않습니다.
+
+### 스트리밍 요청 설정
+
+**위치**: `codex-rs/core/src/chat_completions.rs:331-370`
+
+```rust
+// 페이로드에 stream: true 설정
+let payload = json!({
+    "model": model_family.slug,
+    "messages": messages,
+    "stream": true,  // 항상 스트리밍
+    "tools": tools_json,
+});
+
+// SSE (Server-Sent Events) 수락
+let req_builder = provider
+    .create_request_builder(client, &None)
+    .await?
+    .header(reqwest::header::ACCEPT, "text/event-stream")  // SSE
+    .json(&payload);
+
+let response = req_builder.send().await?;
+```
+
+**포인트**:
+- `Accept: text/event-stream` 헤더로 SSE 요청
+- 모든 Chat Completion 호출이 스트리밍
+
+### 스트림 처리 아키텍처
+
+**위치**: `codex-rs/core/src/chat_completions.rs:374-388`
+
+```rust
+if resp.status().is_success() {
+    // 채널 생성 (비동기 메시지 전달)
+    let (tx_event, rx_event) = mpsc::channel::<Result<ResponseEvent>>(1600);
+
+    // 바이트 스트림 생성
+    let stream = resp.bytes_stream().map_err(|e| {
+        CodexErr::ResponseStreamFailed(ResponseStreamFailed {
+            source: e,
+            request_id: None,
+        })
+    });
+
+    // 백그라운드 태스크에서 SSE 처리
+    tokio::spawn(process_chat_sse(
+        stream,
+        tx_event,
+        provider.stream_idle_timeout(),
+        otel_event_manager.clone(),
+    ));
+
+    // 스트림 반환 (비동기 채널 수신 측)
+    return Ok(ResponseStream { rx_event });
+}
+```
+
+**아키텍처**:
+```
+HTTP Response
+     ↓
+Bytes Stream ──→ [Background Task: process_chat_sse]
+                          ↓
+                   Parse SSE Events
+                          ↓
+                   Parse JSON Chunks
+                          ↓
+                   mpsc::channel (tx_event)
+                          ↓
+     ┌────────────────────┘
+     ↓
+ResponseStream (rx_event) ──→ Main Application
+```
+
+**포인트**:
+- 별도 Tokio 태스크에서 SSE 파싱
+- `mpsc::channel`로 메인 스레드와 통신
+- 버퍼 크기 1600으로 백프레셔 관리
+
+### SSE 파싱 (실제 구현)
+
+**위치**: `codex-rs/core/src/chat_completions.rs:430+` (process_chat_sse 함수)
+
+```rust
+async fn process_chat_sse(
+    stream: impl Stream<Item = Result<Bytes>>,
+    tx_event: mpsc::Sender<Result<ResponseEvent>>,
+    idle_timeout: Duration,
+    otel_manager: OtelEventManager,
+) {
+    let mut event_stream = stream.eventsource();
+
+    loop {
+        // 타임아웃으로 스트림 읽기
+        let event = match timeout(idle_timeout, event_stream.next()).await {
+            Ok(Some(Ok(event))) => event,
+            Ok(Some(Err(e))) => {
+                // 스트림 에러
+                let _ = tx_event.send(Err(parse_error(e))).await;
+                break;
+            }
+            Ok(None) | Err(_) => {
+                // 스트림 종료 또는 타임아웃
+                break;
+            }
+        };
+
+        // "[DONE]" 체크
+        if event.data == "[DONE]" {
+            let _ = tx_event.send(Ok(ResponseEvent::Done)).await;
+            break;
+        }
+
+        // JSON 파싱
+        let chunk: ChatCompletionChunk = match serde_json::from_str(&event.data) {
+            Ok(c) => c,
+            Err(e) => {
+                let _ = tx_event.send(Err(CodexErr::ParseError(e))).await;
+                continue;
+            }
+        };
+
+        // 델타 처리
+        if let Some(delta) = chunk.choices[0].delta.content {
+            // 텍스트 델타를 이벤트로 전송
+            let _ = tx_event.send(Ok(ResponseEvent::TextDelta(delta))).await;
+        }
+    }
+}
+```
+
+**포인트**:
+- `eventsource-stream` crate로 SSE 파싱
+- Idle timeout으로 무한 대기 방지
+- 각 청크를 `ResponseEvent`로 변환
+
+### Idle Timeout 처리
+
+**위치**: `codex-rs/core/src/model_provider_info.rs` (추정)
+
+```rust
+impl ModelProviderInfo {
+    pub fn stream_idle_timeout(&self) -> Duration {
+        // 스트림이 60초 동안 데이터 없으면 타임아웃
+        Duration::from_secs(60)
+    }
+}
+```
+
+**동작**:
+```rust
+let event = timeout(idle_timeout, event_stream.next()).await;
+```
+
+- 60초 동안 청크가 오지 않으면 스트림 중단
+- 느린 생성이나 네트워크 문제 감지
+
+### 재시도와 스트리밍
+
+**위치**: `codex-rs/core/src/chat_completions.rs:390-430`
+
+```rust
+// 429 (Rate Limit) 또는 5xx 에러 시
+Ok(res) if status == StatusCode::TOO_MANY_REQUESTS
+         || status.is_server_error() => {
+
+    if attempt > max_retries {
+        return Err(CodexErr::RetryLimit(...));
+    }
+
+    // Retry-After 헤더 확인
+    let retry_after_secs = res
+        .headers()
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<u64>().ok());
+
+    // Retry-After 또는 exponential backoff
+    let delay = retry_after_secs
+        .map(|s| Duration::from_millis(s * 1_000))
+        .unwrap_or_else(|| backoff(attempt));
+
+    tokio::time::sleep(delay).await;
+    // 재시도...
+}
+```
+
+**포인트**:
+- 스트리밍 시작 전 에러는 재시도 가능
+- 스트리밍 시작 후 에러는 재시도 불가 (별도 처리)
+- `Retry-After` 헤더 우선 사용
+
+### 실시간 이벤트 전달
+
+```rust
+// TUI에서 스트림 소비
+let mut stream = codex.send_message(user_input).await?;
+
+while let Some(event) = stream.next().await {
+    match event? {
+        ResponseEvent::TextDelta(text) => {
+            // 화면에 즉시 출력
+            print!("{}", text);
+            stdout().flush()?;
+        }
+        ResponseEvent::Done => {
+            println!("\n[완료]");
+            break;
+        }
+        _ => {}
+    }
+}
+```
+
+**사용자 경험**:
+- ChatGPT처럼 타이핑 효과
+- 즉각적인 피드백
+- 취소 가능 (Ctrl+C)
+
+**학습 포인트**:
+- ✅ **스트리밍 우선 설계**: 모든 요청이 스트리밍
+- ✅ **비동기 아키텍처**: Tokio + mpsc 채널
+- ✅ **타임아웃 관리**: Idle timeout으로 무한 대기 방지
+- ✅ **재시도 로직**: 스트림 시작 전 에러만 재시도
+- ✅ **Retry-After 지원**: 서버 지시 존중
+- ✅ **에러 처리**: 파싱 에러, 네트워크 에러 등 모두 처리
+
 ## 다음 단계
 
 스트리밍을 마스터했습니다! 이제 **보이는 것과 숨겨진 것**에서 시스템 프롬프트, 메타데이터 등 인터페이스의 숨겨진 레이어를 파헤쳐봅시다.

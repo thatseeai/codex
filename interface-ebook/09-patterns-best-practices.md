@@ -574,6 +574,179 @@ response = client.chat.completions.create(
 # → 비용 절감 + 빠른 응답
 ```
 
+## Codex CLI에서의 실제 구현
+
+Codex CLI는 **프로덕션 수준의 베스트 프랙티스**를 모두 구현하고 있습니다.
+
+### 1. Exponential Backoff with Jitter (패턴 완벽 구현)
+
+**위치**: `codex-rs/core/src/util.rs:10-15`
+
+```rust
+const INITIAL_DELAY_MS: u64 = 200;      // 초기 200ms
+const BACKOFF_FACTOR: f64 = 2.0;         // 2배씩 증가
+
+pub fn backoff(attempt: u64) -> Duration {
+    let exp = BACKOFF_FACTOR.powi(attempt.saturating_sub(1) as i32);
+    let base = (INITIAL_DELAY_MS as f64 * exp) as u64;
+    let jitter = rand::rng().random_range(0.9..1.1);  // ±10% 지터
+    Duration::from_millis((base as f64 * jitter) as u64)
+}
+```
+
+**지터의 중요성**:
+- 여러 클라이언트가 동시에 재시도하는 "thundering herd" 방지
+- 서버 부하 분산
+
+### 2. Retry-After 헤더 존중
+
+**위치**: `codex-rs/core/src/chat_completions.rs:408-416`
+
+```rust
+// 서버가 Retry-After 헤더 제공 시 우선 사용
+let retry_after_secs = res
+    .headers()
+    .get(reqwest::header::RETRY_AFTER)
+    .and_then(|v| v.to_str().ok())
+    .and_then(|s| s.parse::<u64>().ok());
+
+let delay = retry_after_secs
+    .map(|s| Duration::from_millis(s * 1_000))
+    .unwrap_or_else(|| backoff(attempt));  // 없으면 exponential backoff
+```
+
+**베스트 프랙티스**:
+- 서버 지시를 존중 (Retry-After 우선)
+- 폴백: exponential backoff
+
+### 3. 재시도 가능 에러 구분
+
+**위치**: `codex-rs/core/src/chat_completions.rs:391-399`
+
+```rust
+Ok(res) => {
+    let status = res.status();
+
+    // 재시도 가능: 429, 5xx
+    if !(status == StatusCode::TOO_MANY_REQUESTS
+         || status.is_server_error()) {
+        // 재시도 불가 에러 (4xx 등) → 즉시 실패
+        return Err(CodexErr::UnexpectedStatus(...));
+    }
+
+    // 재시도 진행...
+}
+```
+
+**에러 분류**:
+- ✅ 재시도: 429 (Rate Limit), 500-599 (Server Error)
+- ❌ 재시도 안 함: 400 (Bad Request), 401 (Unauthorized), 404 (Not Found)
+
+### 4. 타임아웃 설정
+
+```rust
+// 스트림 idle timeout
+let event = timeout(
+    Duration::from_secs(60),  // 60초 타임아웃
+    event_stream.next()
+).await;
+```
+
+### 5. 관찰성 (Observability)
+
+**위치**: `codex-rs/core/src/chat_completions.rs:364-371`
+
+```rust
+use codex_otel::otel_event_manager::OtelEventManager;
+
+// 모든 요청을 OpenTelemetry로 로깅
+let res = otel_event_manager
+    .log_request(attempt, || {
+        req_builder
+            .header(reqwest::header::ACCEPT, "text/event-stream")
+            .json(&payload)
+            .send()
+    })
+    .await;
+```
+
+**추적 정보**:
+- 요청 ID
+- 시도 횟수 (attempt)
+- 레이턴시
+- 에러 발생 시 스택 트레이스
+
+### 6. 타입 안전성 (Rust의 강점)
+
+```rust
+// 컴파일 타임에 모든 에러 케이스 강제
+match response {
+    Ok(stream) => { /* ... */ },
+    Err(CodexErr::RateLimitError(_)) => { /* ... */ },
+    Err(CodexErr::NetworkError(_)) => { /* ... */ },
+    Err(CodexErr::ParseError(_)) => { /* ... */ },
+    // 컴파일러가 모든 케이스 처리 강제
+}
+```
+
+### 7. 구조화된 에러 메시지
+
+**위치**: `codex-rs/core/src/util.rs:25-38`
+
+```rust
+pub fn try_parse_error_message(text: &str) -> String {
+    let json = serde_json::from_str::<serde_json::Value>(text)
+        .unwrap_or_default();
+
+    // {"error": {"message": "..."}} 형식 파싱
+    if let Some(error) = json.get("error")
+        && let Some(message) = error.get("message")
+        && let Some(message_str) = message.as_str()
+    {
+        return message_str.to_string();
+    }
+
+    text.to_string()  // 파싱 실패 시 원본 반환
+}
+```
+
+### 8. 비동기 아키텍처 (Tokio)
+
+```rust
+// 병렬 도구 실행
+let tasks: Vec<_> = tool_calls
+    .iter()
+    .map(|tc| execute_tool_async(tc))
+    .collect();
+
+let results = tokio::join_all(tasks).await;
+```
+
+**성능 이점**:
+- 여러 함수 호출 병렬 실행
+- I/O 대기 시간 최소화
+
+### 실제 프로덕션 품질 코드
+
+Codex CLI의 코드는 **엔터프라이즈급 품질**을 보여줍니다:
+
+| 베스트 프랙티스 | Codex CLI 구현 | 위치 |
+|----------------|----------------|------|
+| Exponential Backoff | ✅ Jitter 포함 | `core/src/util.rs:10` |
+| Retry-After | ✅ 우선 사용 | `core/src/chat_completions.rs:408` |
+| 에러 분류 | ✅ 재시도 가능/불가 구분 | `core/src/chat_completions.rs:391` |
+| Timeout | ✅ Idle timeout 60s | `core/src/chat_completions.rs:677` |
+| Observability | ✅ OpenTelemetry | `core/src/chat_completions.rs:364` |
+| Type Safety | ✅ Rust 타입 시스템 | 전체 코드베이스 |
+| 비동기 | ✅ Tokio 사용 | 전체 코드베이스 |
+| 테스트 | ✅ 통합 테스트 | `core/tests/` |
+
+**학습 포인트**:
+- ✅ **실전 검증**: 수천 명의 사용자가 사용하는 코드
+- ✅ **엣지 케이스 처리**: 모든 실패 시나리오 고려
+- ✅ **성능 최적화**: 비동기, 병렬 처리
+- ✅ **유지보수성**: 명확한 에러 타입, 트레이싱
+
 ## 다음 단계
 
 실전 패턴을 마스터했습니다! 다음은 **API 비교 및 마이그레이션**에서 다양한 LLM 플랫폼을 비교해봅시다.

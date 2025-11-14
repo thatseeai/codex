@@ -527,6 +527,168 @@ except Exception as e:
     print(f"Failed: {e}")
 ```
 
+## Codex CLI에서의 실제 구현
+
+Codex CLI는 Rust로 작성된 프로덕션 LLM 애플리케이션으로, Chat Completion API를 실제로 어떻게 사용하는지 확인할 수 있습니다.
+
+### 메시지 구성
+
+**위치**: `codex-rs/core/src/chat_completions.rs:54-328`
+
+```rust
+// 시스템 프롬프트 추가
+let full_instructions = prompt.get_full_instructions(model_family);
+messages.push(json!({"role": "system", "content": full_instructions}));
+
+// 사용자/어시스턴트 메시지 처리
+for item in &input {
+    match item {
+        ResponseItem::Message { role, content, .. } => {
+            messages.push(json!({"role": role, "content": text}));
+        }
+        // Function calls를 tool_calls로 변환
+        ResponseItem::FunctionCall { name, arguments, call_id, .. } => {
+            messages.push(json!({
+                "role": "assistant",
+                "content": null,
+                "tool_calls": [{
+                    "id": call_id,
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "arguments": arguments,
+                    }
+                }]
+            }));
+        }
+        // 함수 실행 결과
+        ResponseItem::FunctionCallOutput { call_id, output } => {
+            messages.push(json!({
+                "role": "tool",
+                "tool_call_id": call_id,
+                "content": output.content,
+            }));
+        }
+        _ => {}
+    }
+}
+```
+
+**포인트**:
+- 내부 프로토콜 → Chat Completion API 형식 변환
+- 멀티모달 지원 (이미지 URL 처리)
+- Tool calls를 표준 형식으로 매핑
+
+### API 요청 생성
+
+**위치**: `codex-rs/core/src/chat_completions.rs:331-336`
+
+```rust
+let payload = json!({
+    "model": model_family.slug,
+    "messages": messages,
+    "stream": true,          // 항상 스트리밍 사용
+    "tools": tools_json,
+});
+
+let req_builder = provider
+    .create_request_builder(client, &None)
+    .await?
+    .json(&payload);
+```
+
+**포인트**:
+- 모든 요청이 스트리밍 모드 (`stream: true`)
+- Tools 자동 포함 (사용 가능한 경우)
+- Provider abstraction으로 여러 백엔드 지원
+
+### Exponential Backoff 재시도
+
+**위치**: `codex-rs/core/src/util.rs:10-15`
+
+```rust
+const INITIAL_DELAY_MS: u64 = 200;
+const BACKOFF_FACTOR: f64 = 2.0;
+
+pub(crate) fn backoff(attempt: u64) -> Duration {
+    let exp = BACKOFF_FACTOR.powi(attempt.saturating_sub(1) as i32);
+    let base = (INITIAL_DELAY_MS as f64 * exp) as u64;
+    let jitter = rand::rng().random_range(0.9..1.1);  // ±10% jitter
+    Duration::from_millis((base as f64 * jitter) as u64)
+}
+```
+
+**재시도 로직**: `codex-rs/core/src/chat_completions.rs:344-390`
+
+```rust
+let mut attempt = 0;
+let max_retries = provider.request_max_retries();
+
+loop {
+    attempt += 1;
+
+    match send_request(req_builder).await {
+        Ok(response) => return Ok(response),
+        Err(e) if attempt >= max_retries => {
+            return Err(RetryLimitReachedError { ... });
+        }
+        Err(e) if should_retry(&e) => {
+            let delay = backoff(attempt);
+            tokio::time::sleep(delay).await;
+            continue;
+        }
+        Err(e) => return Err(e),
+    }
+}
+```
+
+**포인트**:
+- Exponential backoff: 200ms → 400ms → 800ms ...
+- Jitter 추가로 thundering herd 방지
+- 재시도 가능 에러만 재시도 (5xx, rate limit)
+
+### 에러 파싱
+
+**위치**: `codex-rs/core/src/util.rs:25-38`
+
+```rust
+pub(crate) fn try_parse_error_message(text: &str) -> String {
+    let json = serde_json::from_str::<serde_json::Value>(text)
+        .unwrap_or_default();
+
+    // OpenAI 에러 형식: {"error": {"message": "..."}}
+    if let Some(error) = json.get("error")
+        && let Some(message) = error.get("message")
+        && let Some(message_str) = message.as_str()
+    {
+        return message_str.to_string();
+    }
+
+    text.to_string()
+}
+```
+
+**사용 예시**:
+```json
+// API 응답
+{
+  "error": {
+    "message": "Rate limit exceeded",
+    "type": "rate_limit_error",
+    "code": "rate_limit_exceeded"
+  }
+}
+
+// 파싱 결과: "Rate limit exceeded"
+```
+
+**학습 포인트**:
+- ✅ **프로덕션 품질**: 실제 운영 환경에서 사용되는 코드
+- ✅ **완전한 에러 처리**: 재시도, backoff, 에러 파싱
+- ✅ **스트리밍 우선**: 모든 요청이 스트리밍으로 처리
+- ✅ **타입 안전성**: Rust의 강력한 타입 시스템 활용
+- ✅ **관찰성**: Tracing/OpenTelemetry 통합
+
 ## 다음 단계
 
 Chat Completion의 기본을 마스터했습니다! 다음 장에서는 레거시 **Text Completion 인터페이스**를 살펴보고 Chat Completion과의 차이점을 비교해봅시다.
